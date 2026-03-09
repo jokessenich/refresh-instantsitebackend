@@ -9,7 +9,6 @@ const STAGES = [
   { key: "queued", label: "Queuing your request..." },
   { key: "generating", label: "AI is crafting your website..." },
   { key: "validating", label: "Validating output..." },
-  { key: "generated", label: "Website generated!" },
   { key: "deploying", label: "Deploying to the web..." },
   { key: "ready", label: "Your site is live!" },
 ];
@@ -20,8 +19,8 @@ const STATUS_TO_STAGE = {
   GENERATING: 1,
   VALIDATING: 2,
   GENERATED: 3,
-  DEPLOYING: 4,
-  READY: 5,
+  DEPLOYING: 3,
+  READY: 4,
   FAILED: -1,
 };
 
@@ -32,8 +31,6 @@ function getOrCreateUserId() {
 
 export function GeneratingScreen({ requestId, onComplete, onError }) {
   const [stage, setStage] = useState(0);
-  const [statusText, setStatusText] = useState("Starting...");
-  const [deployTriggered, setDeployTriggered] = useState(false);
   const pollRef = useRef(null);
 
   useEffect(() => {
@@ -45,10 +42,7 @@ export function GeneratingScreen({ requestId, onComplete, onError }) {
           headers: { "x-user-id": getOrCreateUserId() },
         });
 
-        if (!res.ok) {
-          console.error("Status poll failed:", res.status);
-          return;
-        }
+        if (!res.ok) return;
 
         const data = await res.json();
         const backendStatus = data.status?.toUpperCase() || "QUEUED";
@@ -61,18 +55,10 @@ export function GeneratingScreen({ requestId, onComplete, onError }) {
         }
 
         setStage(stageIndex);
-        setStatusText(STAGES[stageIndex]?.label || "Processing...");
-
-        // When generated, trigger deploy automatically
-        if (backendStatus === "GENERATED" && !deployTriggered) {
-          setDeployTriggered(true);
-          triggerDeploy(requestId);
-        }
 
         // When ready, we're done
         if (backendStatus === "READY" && data.previewUrl) {
           clearInterval(pollRef.current);
-          // Brief pause to show the "live" state
           setTimeout(() => onComplete(data.previewUrl), 800);
         }
       } catch (err) {
@@ -80,31 +66,13 @@ export function GeneratingScreen({ requestId, onComplete, onError }) {
       }
     };
 
-    // Poll immediately, then every 3 seconds
     poll();
     pollRef.current = setInterval(poll, 3000);
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [requestId, deployTriggered, onComplete, onError]);
-
-  const triggerDeploy = async (id) => {
-    try {
-      const res = await fetch(`/api/site-requests/${id}/deploy`, {
-        method: "POST",
-        headers: { "x-user-id": getOrCreateUserId() },
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        console.error("Deploy trigger failed:", err);
-        // Don't error out — the poll will catch the status
-      }
-    } catch (err) {
-      console.error("Deploy trigger error:", err);
-    }
-  };
+  }, [requestId, onComplete, onError]);
 
   return (
     <motion.div
@@ -115,14 +83,12 @@ export function GeneratingScreen({ requestId, onComplete, onError }) {
       <GridBG />
 
       <div className="relative z-10 text-center">
-        {/* Animated icon */}
         <div className="w-16 h-16 rounded-[18px] bg-accent-dim border border-accent/20 flex items-center justify-center mx-auto mb-8 relative">
           <Icons.Sparkles size={28} className="text-accent animate-float" />
           <div className="absolute -inset-2 rounded-[22px] border border-accent/10 animate-pulse-ring" />
         </div>
 
-        {/* Progress steps */}
-        <div className="flex flex-col gap-2.5 min-h-[200px]">
+        <div className="flex flex-col gap-2.5 min-h-[180px]">
           {STAGES.map((s, i) => (
             <motion.div
               key={i}
@@ -161,7 +127,6 @@ export function GeneratingScreen({ requestId, onComplete, onError }) {
           ))}
         </div>
 
-        {/* Elapsed time */}
         <ElapsedTimer />
       </div>
     </motion.div>
