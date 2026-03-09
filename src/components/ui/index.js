@@ -117,15 +117,48 @@ export function Select({ label, options, value, onChange }) {
 }
 
 // ─── UPLOAD ZONE ─────────────────────────────────────────────────────────────
-export function UploadZone({ label, hint }) {
-  const [file, setFile] = useState(null);
+export function UploadZone({ label, hint, multiple, onChange, files: controlledFiles }) {
+  const [localFiles, setLocalFiles] = useState([]);
+  const files = controlledFiles ?? localFiles;
 
   const handleClick = () => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
-    input.onchange = (e) => setFile(e.target.files[0]);
+    input.multiple = !!multiple;
+    input.onchange = (e) => {
+      const selected = Array.from(e.target.files || []);
+      if (selected.length === 0) return;
+
+      // Convert each file to base64
+      const promises = selected.map(
+        (file) =>
+          new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () =>
+              resolve({
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                dataUrl: reader.result,
+              });
+            reader.readAsDataURL(file);
+          })
+      );
+
+      Promise.all(promises).then((results) => {
+        const newFiles = multiple ? [...files, ...results] : results;
+        setLocalFiles(newFiles);
+        if (onChange) onChange(newFiles);
+      });
+    };
     input.click();
+  };
+
+  const removeFile = (index) => {
+    const newFiles = files.filter((_, i) => i !== index);
+    setLocalFiles(newFiles);
+    if (onChange) onChange(newFiles);
   };
 
   return (
@@ -135,28 +168,48 @@ export function UploadZone({ label, hint }) {
           {label}
         </label>
       )}
-      <div
-        onClick={handleClick}
-        className={`p-6 border-[1.5px] border-dashed rounded-[10px] flex flex-col items-center gap-2 cursor-pointer transition-all duration-200 ${
-          file
-            ? "border-accent bg-accent-dim"
-            : "border-border hover:border-text-dim"
-        }`}
-      >
-        {file ? (
-          <>
-            <Icons.Check size={20} className="text-accent" />
-            <span className="text-[13px] text-accent">{file.name}</span>
-          </>
-        ) : (
-          <>
-            <Icons.Upload size={20} className="text-text-dim" />
-            <span className="text-[13px] text-text-dim">
-              {hint || "Click to upload"}
-            </span>
-          </>
-        )}
-      </div>
+      {files.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {files.map((f, i) => (
+            <div
+              key={i}
+              className="p-3 border border-accent/30 bg-accent-dim rounded-[10px] flex items-center gap-3"
+            >
+              <img
+                src={f.dataUrl}
+                alt={f.name}
+                className="w-10 h-10 rounded object-cover flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] text-text-primary truncate">{f.name}</div>
+                <div className="text-[11px] text-text-dim">{(f.size / 1024).toFixed(0)} KB</div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); removeFile(i); }}
+                className="w-6 h-6 rounded border border-border bg-transparent text-text-dim cursor-pointer flex items-center justify-center hover:text-text-primary transition-colors"
+              >
+                <Icons.X size={10} />
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={handleClick}
+            className="text-[13px] text-accent hover:text-accent-hover cursor-pointer bg-transparent border-none font-sans text-left"
+          >
+            + Add {multiple ? "more" : "another"}
+          </button>
+        </div>
+      ) : (
+        <div
+          onClick={handleClick}
+          className="p-6 border-[1.5px] border-dashed rounded-[10px] flex flex-col items-center gap-2 cursor-pointer transition-all duration-200 border-border hover:border-text-dim"
+        >
+          <Icons.Upload size={20} className="text-text-dim" />
+          <span className="text-[13px] text-text-dim">
+            {hint || "Click to upload"}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
