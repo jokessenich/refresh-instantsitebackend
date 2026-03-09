@@ -25,7 +25,7 @@ interface VercelDeploymentResponse {
 // ─── Constants ──────────────────────────────────────────
 
 const VERCEL_API_BASE = "https://api.vercel.com";
-const DEPLOY_TIMEOUT_MS = 300_000; // 5 minutes
+const DEPLOY_TIMEOUT_MS = 300_000;
 const POLL_INTERVAL_MS = 5_000;
 
 // ─── Deploy Files to Vercel ─────────────────────────────
@@ -37,11 +37,17 @@ export async function deployToVercel(
   const headers = buildHeaders();
   const teamQuery = env.VERCEL_TEAM_ID ? `?teamId=${env.VERCEL_TEAM_ID}` : "";
 
-  // Step 1: Prepare file list with SHA hashes
-  const fileEntries = prepareFiles(files);
+  // Step 1: Convert all files to Buffers and compute SHA hashes
+  const fileBuffers = new Map<string, Buffer>();
+  for (const [path, content] of files) {
+    const buffer = typeof content === "string" ? Buffer.from(content, "utf-8") : content;
+    fileBuffers.set(path, buffer);
+  }
+
+  const fileEntries = prepareFiles(fileBuffers);
 
   // Step 2: Upload all files
-  await uploadFiles(files, fileEntries, headers);
+  await uploadFiles(fileBuffers, fileEntries, headers);
 
   // Step 3: Create deployment
   const deployment = await createDeployment(fileEntries, projectName, headers, teamQuery);
@@ -51,7 +57,7 @@ export async function deployToVercel(
     url: deployment.url,
   });
 
-  // Step 4: Disable deployment protection so the site is publicly accessible
+  // Step 4: Disable deployment protection
   await disableDeploymentProtection(projectName, headers, teamQuery);
 
   // Step 5: Wait for deployment to be ready
@@ -67,13 +73,11 @@ export async function deployToVercel(
 
 // ─── Prepare Files ──────────────────────────────────────
 
-function prepareFiles(files: DeployableFileMap): VercelFile[] {
+function prepareFiles(files: Map<string, Buffer>): VercelFile[] {
   const entries: VercelFile[] = [];
 
-  for (const [filePath, content] of files) {
-    const buffer = Buffer.from(content, "utf-8");
+  for (const [filePath, buffer] of files) {
     const sha = crypto.createHash("sha1").update(buffer).digest("hex");
-
     entries.push({
       file: filePath,
       sha,
@@ -87,15 +91,13 @@ function prepareFiles(files: DeployableFileMap): VercelFile[] {
 // ─── Upload Files ───────────────────────────────────────
 
 async function uploadFiles(
-  files: DeployableFileMap,
+  files: Map<string, Buffer>,
   entries: VercelFile[],
   headers: Record<string, string>
 ): Promise<void> {
   const uploadPromises = entries.map(async (entry) => {
-    const content = files.get(entry.file);
-    if (!content) throw new Error(`File content missing: ${entry.file}`);
-
-    const buffer = Buffer.from(content, "utf-8");
+    const buffer = files.get(entry.file);
+    if (!buffer) throw new Error(`File content missing: ${entry.file}`);
 
     const response = await fetch(`${VERCEL_API_BASE}/v2/files`, {
       method: "POST",
@@ -171,7 +173,6 @@ async function disableDeploymentProtection(
   teamQuery: string
 ): Promise<void> {
   try {
-    // First try to update project settings to remove protection
     const response = await fetch(
       `${VERCEL_API_BASE}/v9/projects/${projectName}${teamQuery}`,
       {
