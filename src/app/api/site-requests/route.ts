@@ -28,11 +28,22 @@ export async function POST(req: NextRequest) {
 
     const input = parsed.data;
 
-    // TODO: In production, extract userId from auth session/token
-    const userId = req.headers.get("x-user-id");
-    if (!userId) {
+    // Auto-create user if they don't exist (V1 — no real auth yet)
+    const rawUserId = req.headers.get("x-user-id");
+    if (!rawUserId) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
+
+    let user = await prisma.user.findUnique({ where: { id: rawUserId } });
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          id: rawUserId,
+          email: `${rawUserId}@placeholder.local`,
+        },
+      });
+    }
+    const userId = user.id;
 
     // Map business type to Prisma enum
     const businessTypeMap: Record<string, string> = {
