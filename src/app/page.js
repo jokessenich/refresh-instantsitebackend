@@ -81,9 +81,13 @@ export default function Home() {
         }),
       });
 
-      if (!genRes.ok) {
-        const err = await genRes.json();
-        throw new Error(err.error || "Failed to start generation");
+  if (!genRes.ok) {
+        let msg = "Failed to start generation";
+        try {
+          const err = await genRes.json();
+          msg = err.error || msg;
+        } catch {}
+        throw new Error(msg);
       }
     } catch (err) {
       console.error("Generation failed:", err);
