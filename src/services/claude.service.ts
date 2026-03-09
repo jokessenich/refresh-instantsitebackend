@@ -42,7 +42,31 @@ CRITICAL: Return ONLY the HTML. No explanation, no markdown code fences, no comm
 
 // ─── Prompt Builder ─────────────────────────────────────
 
-export function buildPrompt(input: SiteRequestInput): string {
+export function buildPrompt(input: SiteRequestInput, imageFileNames?: string[]): string {
+  const hasImages = imageFileNames && imageFileNames.length > 0;
+  const logoFile = imageFileNames?.find((f) => f.startsWith("logo"));
+  const otherImages = imageFileNames?.filter((f) => !f.startsWith("logo")) || [];
+
+  let imageSection: string;
+
+  if (hasImages) {
+    const parts: string[] = [];
+    if (logoFile) {
+      parts.push(`Logo: Use <img src="/${logoFile}"> for the business logo in the header/nav. Style it appropriately (reasonable height, no distortion).`);
+    }
+    if (otherImages.length > 0) {
+      const imgTags = otherImages.map((f) => `<img src="/${f}">`).join(", ");
+      parts.push(`Business photos: Use these images throughout the site in hero sections, about sections, or gallery areas: ${imgTags}. Make the images look great — use object-fit: cover, appropriate sizing, and good placement.`);
+    }
+    imageSection = `Images Provided:
+${parts.join("\n")}
+
+IMPORTANT: These image files will be deployed alongside the HTML. Reference them with a leading slash (e.g. src="/logo.png", src="/image-1.jpg"). Do NOT use base64, external URLs, or placeholder images. Use ONLY the provided image files listed above.`;
+  } else {
+    imageSection = `Images Provided:
+None (use CSS gradients, patterns, or solid colors for visual interest instead. Do NOT use placeholder image URLs or broken image references.)`;
+  }
+
   return `The business details are below:
 
 Business Name:
@@ -83,8 +107,7 @@ ${input.fontPreference ?? "Modern and clean"}
 Overall Vibe:
 ${input.siteVibe ?? "Professional and trustworthy"}
 
-Images Provided:
-None (use CSS gradients, patterns, or solid colors for visual interest instead)
+${imageSection}
 
 Tone:
 Professional but approachable — specific to the business type
@@ -102,8 +125,11 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function generateSiteHtml(input: SiteRequestInput): Promise<string> {
-  const prompt = buildPrompt(input);
+export async function generateSiteHtml(
+  input: SiteRequestInput,
+  imageFileNames?: string[]
+): Promise<string> {
+  const prompt = buildPrompt(input, imageFileNames);
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -115,7 +141,7 @@ export async function generateSiteHtml(input: SiteRequestInput): Promise<string>
 
       const response = await getClient().messages.create({
         model: "claude-opus-4-6",
-        max_tokens: 20000,
+        max_tokens: 16000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: prompt }],
       });
@@ -145,6 +171,7 @@ export async function generateSiteHtml(input: SiteRequestInput): Promise<string>
         businessName: input.businessName,
         htmlLength: html.length,
         attempt,
+        imageCount: imageFileNames?.length ?? 0,
       });
 
       return html;
