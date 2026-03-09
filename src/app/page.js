@@ -35,7 +35,7 @@ export default function Home() {
     setView("generating");
 
     try {
-      // Step 1: Create site request
+      // Step 1: Create site request (no images)
       const createRes = await fetch("/api/site-requests", {
         method: "POST",
         headers: {
@@ -59,16 +59,26 @@ export default function Home() {
 
       if (!createRes.ok) {
         const err = await createRes.json();
-        throw new Error(err.error || "Failed to create site request");
+        const msg = err.details
+          ? err.details.map((d) => `${d.field}: ${d.message}`).join(", ")
+          : err.error;
+        throw new Error(msg || "Failed to create site request");
       }
 
       const { id } = await createRes.json();
       setRequestId(id);
 
-      // Step 2: Trigger generation
+      // Step 2: Trigger generate + deploy (with images)
       const genRes = await fetch(`/api/site-requests/${id}/generate`, {
         method: "POST",
-        headers: { "x-user-id": getOrCreateUserId() },
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": getOrCreateUserId(),
+        },
+        body: JSON.stringify({
+          logoFile: data.logoFiles && data.logoFiles.length > 0 ? data.logoFiles[0] : undefined,
+          imageFiles: data.imageFiles && data.imageFiles.length > 0 ? data.imageFiles : undefined,
+        }),
       });
 
       if (!genRes.ok) {
@@ -168,7 +178,6 @@ function getOrCreateUserId() {
 }
 
 function mapBusinessType(data) {
-  // Default to local-service; could be smarter with NLP later
   const about = (data.about || "").toLowerCase();
   if (about.includes("restaurant") || about.includes("food") || about.includes("menu"))
     return "restaurant";
@@ -185,10 +194,10 @@ function mapBusinessType(data) {
 
 function extractServices(about) {
   if (!about || about.length < 10) return ["General Services"];
-  // Simple extraction: split on commas or common delimiters, take first few chunks
   const sentences = about.split(/[.,;]\s*/);
   const services = sentences
-    .filter((s) => s.length > 5 && s.length < 100)
+    .filter((s) => s.trim().length > 5 && s.trim().length < 100)
+    .map((s) => s.trim())
     .slice(0, 6);
   return services.length > 0 ? services : ["General Services"];
 }
