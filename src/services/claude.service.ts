@@ -114,8 +114,8 @@ export async function generateSiteHtml(input: SiteRequestInput): Promise<string>
       }
 
       const response = await getClient().messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 16000,
+        model: "claude-opus-4-6",
+        max_tokens: 20000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: prompt }],
       });
