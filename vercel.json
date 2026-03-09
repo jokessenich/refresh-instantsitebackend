@@ -1,10 +1,7 @@
 {
   "functions": {
-    "src/app/api/site-requests/[id]/generate/route.ts": {
-      "maxDuration": 60
-    },
-    "src/app/api/site-requests/[id]/deploy/route.ts": {
-      "maxDuration": 60
+    "src/app/api/**/*.ts": {
+      "maxDuration": 300
     }
   }
 }
