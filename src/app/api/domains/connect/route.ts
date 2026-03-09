@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await initiateDomainConnection(parsed.data);
+const result = await initiateDomainConnection(parsed.data as { domain: string; deploymentId: string });
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
