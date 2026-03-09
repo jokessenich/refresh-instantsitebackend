@@ -88,9 +88,8 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    logger.error("Failed to create site request", {
-      error: error instanceof Error ? error.message : "Unknown",
-    });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown";
+    logger.error("Failed to create site request", { error: message });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
