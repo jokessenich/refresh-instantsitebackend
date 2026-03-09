@@ -7,6 +7,19 @@ import { validateGeneratedHtml, validateStaticFileMap } from "./validation.servi
 import { deployToVercel } from "./vercel-deploy.service";
 import type { SiteRequestInput, BusinessType } from "@/types/site-request";
 
+// ─── Types ──────────────────────────────────────────────
+
+interface UploadedImage {
+  name: string;
+  type: string;
+  dataUrl: string;
+}
+
+interface PipelineImages {
+  logoFile?: UploadedImage;
+  imageFiles?: UploadedImage[];
+}
+
 // ─── Status Update Helper ───────────────────────────────
 
 type PipelineStatus = "QUEUED" | "GENERATING" | "VALIDATING" | "GENERATED" | "DEPLOYING" | "READY" | "FAILED";
@@ -18,27 +31,97 @@ async function updateStatus(requestId: string, status: PipelineStatus, errorMess
   });
 }
 
-// ─── Generate Site HTML ─────────────────────────────────
+// ─── Image Helpers ──────────────────────────────────────
 
-export async function runGenerationPipeline(requestId: string): Promise<{
-  html: string;
-  siteId: string;
-}> {
+function dataUrlToBuffer(dataUrl: string): Buffer | null {
   try {
-    // 1. Load site request
+    const base64 = dataUrl.split(",")[1];
+    if (!base64) return null;
+    return Buffer.from(base64, "base64");
+  } catch {
+    return null;
+  }
+}
+
+function getExtension(mimeType: string, fileName: string): string {
+  const mimeMap: Record<string, string> = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+    "image/gif": ".gif",
+  };
+  if (mimeMap[mimeType]) return mimeMap[mimeType];
+  const ext = fileName.split(".").pop();
+  return ext ? `.${ext}` : ".png";
+}
+
+function buildImageAssets(images: PipelineImages): {
+  fileMap: Map<string, Buffer>;
+  fileNames: string[];
+} {
+  const fileMap = new Map<string, Buffer>();
+  const fileNames: string[] = [];
+
+  if (images.logoFile && images.logoFile.dataUrl) {
+    const ext = getExtension(images.logoFile.type, images.logoFile.name);
+    const fileName = `logo${ext}`;
+    const buffer = dataUrlToBuffer(images.logoFile.dataUrl);
+    if (buffer) {
+      fileMap.set(fileName, buffer);
+      fileNames.push(fileName);
+    }
+  }
+
+  if (images.imageFiles) {
+    images.imageFiles
+      .filter((img) => img && img.dataUrl)
+      .slice(0, 5)
+      .forEach((img, i) => {
+        const ext = getExtension(img.type, img.name);
+        const fileName = `image-${i + 1}${ext}`;
+        const buffer = dataUrlToBuffer(img.dataUrl);
+        if (buffer) {
+          fileMap.set(fileName, buffer);
+          fileNames.push(fileName);
+        }
+      });
+  }
+
+  return { fileMap, fileNames };
+}
+
+// ─── Full Pipeline: Generate + Deploy ───────────────────
+
+export async function runFullPipeline(
+  requestId: string,
+  images: PipelineImages = {}
+): Promise<{ previewUrl: string; deploymentId: string }> {
+  try {
+    // ── 1. Load site request ────────────────────────────
     await updateStatus(requestId, "GENERATING");
 
     const request = await prisma.siteRequest.findUniqueOrThrow({
       where: { id: requestId },
-      include: { uploadedAssets: true },
     });
 
-    logger.info("Starting generation pipeline", {
+    logger.info("Starting full pipeline", {
       requestId,
       businessType: request.businessType,
+      hasLogo: !!images.logoFile,
+      imageCount: images.imageFiles?.length ?? 0,
     });
 
-    // 2. Build input for Claude
+    // ── 2. Process images ───────────────────────────────
+    const { fileMap: imageBuffers, fileNames } = buildImageAssets(images);
+
+    logger.info("Images processed", {
+      requestId,
+      fileNames,
+      totalBytes: Array.from(imageBuffers.values()).reduce((sum, b) => sum + b.byteLength, 0),
+    });
+
+    // ── 3. Build input for Claude ───────────────────────
     const input: SiteRequestInput = {
       businessName: request.businessName,
       businessType: request.businessType.toLowerCase() as BusinessType,
@@ -52,16 +135,14 @@ export async function runGenerationPipeline(requestId: string): Promise<{
       colorPreference: request.colorPreference ?? undefined,
       fontPreference: request.fontPreference ?? undefined,
       siteVibe: request.siteVibe ?? undefined,
-      uploadedImageIds: request.uploadedAssets
-        .filter((a) => a.assetType !== "LOGO")
-        .map((a) => a.id),
-      uploadedLogoId: request.uploadedAssets.find((a) => a.assetType === "LOGO")?.id,
+      uploadedImageIds: [],
+      uploadedLogoId: undefined,
     };
 
-    // 3. Generate HTML with Claude
-    const html = await generateSiteHtml(input);
+    // ── 4. Generate HTML with Claude ────────────────────
+    const html = await generateSiteHtml(input, fileNames);
 
-    // 4. Validate output
+    // ── 5. Validate HTML ────────────────────────────────
     await updateStatus(requestId, "VALIDATING");
 
     const validation = validateGeneratedHtml(html);
@@ -71,7 +152,7 @@ export async function runGenerationPipeline(requestId: string): Promise<{
       throw new Error(errorMsg);
     }
 
-    // 5. Store generated site
+    // ── 6. Store generated site ─────────────────────────
     const generatedSite = await prisma.generatedSite.create({
       data: {
         siteRequestId: requestId,
@@ -81,81 +162,48 @@ export async function runGenerationPipeline(requestId: string): Promise<{
       },
     });
 
-    await updateStatus(requestId, "GENERATED");
-
-    logger.info("Generation pipeline complete", {
-      requestId,
-      siteId: generatedSite.id,
-      htmlLength: html.length,
-    });
-
-    return { html, siteId: generatedSite.id };
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown generation error";
-    logger.error("Generation pipeline failed", { requestId, error: msg });
-
-    const current = await prisma.siteRequest.findUnique({ where: { id: requestId } });
-    if (current && current.status !== "FAILED") {
-      await updateStatus(requestId, "FAILED", msg);
-    }
-
-    throw error;
-  }
-}
-
-// ─── Deploy Generated Site ──────────────────────────────
-
-export async function runDeploymentPipeline(requestId: string): Promise<{
-  previewUrl: string;
-  deploymentId: string;
-}> {
-  try {
     await updateStatus(requestId, "DEPLOYING");
 
-    // 1. Load request + generated site
-    const request = await prisma.siteRequest.findUniqueOrThrow({
-      where: { id: requestId },
-      include: { generatedSite: true },
+    // ── 7. Build deployment file map ────────────────────
+    const deployFiles = new Map<string, string | Buffer>();
+    deployFiles.set("index.html", html);
+
+    // Add images
+    for (const [fileName, buffer] of imageBuffers) {
+      deployFiles.set(fileName, buffer);
+    }
+
+    logger.info("Deployment file map built", {
+      requestId,
+      totalFiles: deployFiles.size,
+      fileNames: Array.from(deployFiles.keys()),
     });
 
-    if (!request.generatedSite) {
-      throw new Error("Site must be generated before deployment");
-    }
-
-    const stored = request.generatedSite.generatedContent as any;
-    const html = stored.html as string;
-
-    if (!html) {
-      throw new Error("No HTML content found in generated site");
-    }
-
-    // 2. Build static file map — just index.html for a static site
-    const files = new Map<string, string>();
-    files.set("index.html", html);
-
-    // 3. Validate file map
-    const fileValidation = validateStaticFileMap(files);
+    // ── 8. Validate file map ────────────────────────────
+    const textFiles = new Map<string, string>();
+    textFiles.set("index.html", html);
+    const fileValidation = validateStaticFileMap(textFiles);
     if (!fileValidation.valid) {
       const errorMsg = `File validation failed: ${fileValidation.errors.join("; ")}`;
       await updateStatus(requestId, "FAILED", errorMsg);
       throw new Error(errorMsg);
     }
 
-    // 4. Store file manifest
+    // ── 9. Store file manifest ──────────────────────────
     const manifest: Record<string, number> = {};
-    for (const [path, content] of files) {
-      manifest[path] = content.length;
+    for (const [path, content] of deployFiles) {
+      manifest[path] = typeof content === "string" ? content.length : content.byteLength;
     }
     await prisma.generatedSite.update({
-      where: { id: request.generatedSite.id },
+      where: { id: generatedSite.id },
       data: { fileManifest: manifest, assembledAt: new Date() },
     });
 
-    // 5. Deploy to Vercel
+    // ── 10. Deploy to Vercel ────────────────────────────
     const projectName = `ss-${slugify(request.businessName)}-${requestId.slice(0, 8)}`;
-    const result = await deployToVercel(files, projectName);
+    const result = await deployToVercel(deployFiles, projectName);
 
-    // 6. Store deployment record
+    // ── 11. Store deployment record ─────────────────────
     await prisma.deployment.create({
       data: {
         siteRequestId: requestId,
@@ -170,9 +218,10 @@ export async function runDeploymentPipeline(requestId: string): Promise<{
 
     await updateStatus(requestId, "READY");
 
-    logger.info("Deployment pipeline complete", {
+    logger.info("Full pipeline complete", {
       requestId,
       previewUrl: result.previewUrl,
+      imageCount: imageBuffers.size,
     });
 
     return {
@@ -180,8 +229,8 @@ export async function runDeploymentPipeline(requestId: string): Promise<{
       deploymentId: result.deploymentId,
     };
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown deployment error";
-    logger.error("Deployment pipeline failed", { requestId, error: msg });
+    const msg = error instanceof Error ? error.message : "Unknown pipeline error";
+    logger.error("Full pipeline failed", { requestId, error: msg });
 
     const current = await prisma.siteRequest.findUnique({ where: { id: requestId } });
     if (current && current.status !== "FAILED") {
