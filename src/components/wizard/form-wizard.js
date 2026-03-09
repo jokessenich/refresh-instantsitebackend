@@ -285,6 +285,8 @@ export function FormWizard({ onClose, onGenerate }) {
     colorPalette: "",
     fontStyle: "",
     siteVibe: "",
+    logoFiles: [],
+    imageFiles: [],
   });
 
   const updateForm = (key, val) =>
@@ -351,10 +353,18 @@ export function FormWizard({ onClose, onGenerate }) {
       subtitle: "Upload your logo and images",
       content: (
         <div className="flex flex-col gap-5">
-          <UploadZone label="Logo" hint="Upload your logo (PNG, SVG, JPG)" />
+          <UploadZone
+            label="Logo"
+            hint="Upload your logo (PNG, SVG, JPG)"
+            files={form.logoFiles}
+            onChange={(files) => updateForm("logoFiles", files)}
+          />
           <UploadZone
             label="Images"
             hint="Upload photos of your business, team, or products"
+            multiple
+            files={form.imageFiles}
+            onChange={(files) => updateForm("imageFiles", files)}
           />
           <div className="p-4 rounded-[10px] bg-accent-dim border border-accent/20">
             <p className="text-[13px] text-text-muted leading-relaxed">
@@ -456,6 +466,8 @@ export function FormWizard({ onClose, onGenerate }) {
             ["Color palette", form.colorPalette || "—"],
             ["Font style", form.fontStyle || "—"],
             ["Site vibe", form.siteVibe || "—"],
+            ["Logo", form.logoFiles.length > 0 ? form.logoFiles[0].name : "None"],
+            ["Images", form.imageFiles.length > 0 ? `${form.imageFiles.length} uploaded` : "None"],
           ].map(([label, value], i) => (
             <div
               key={i}
