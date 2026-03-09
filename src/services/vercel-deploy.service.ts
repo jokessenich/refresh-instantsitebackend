@@ -107,7 +107,7 @@ async function uploadFiles(
         "Content-Length": String(buffer.byteLength),
         "x-vercel-digest": entry.sha,
       },
-      body: buffer,
+      body: new Uint8Array(buffer),
     });
 
     if (!response.ok) {
