@@ -64,6 +64,10 @@ export async function runGenerationPipeline(requestId: string): Promise<{
       colorPreference: request.colorPreference ?? undefined,
       fontPreference: request.fontPreference ?? undefined,
       siteVibe: request.siteVibe ?? undefined,
+      uploadedImageIds: request.uploadedAssets
+        .filter((a) => a.assetType !== "LOGO")
+        .map((a) => a.id),
+      uploadedLogoId: request.uploadedAssets.find((a) => a.assetType === "LOGO")?.id,
     };
 
     // 4. Generate content with Claude
