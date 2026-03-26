@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { runFullPipeline } from "@/services/generation-pipeline.service";
@@ -55,13 +56,15 @@ export async function POST(
       data: { status: "QUEUED" },
     });
 
-    // Fire and forget — runs generate + deploy in one shot
-    runFullPipeline(params.id, { logoFile, imageFiles }).catch((error) => {
-      logger.error("Background pipeline failed", {
-        requestId: params.id,
-        error: error instanceof Error ? error.message : "Unknown",
-      });
-    });
+    // Keep function alive while pipeline runs in background
+    waitUntil(
+      runFullPipeline(params.id, { logoFile, imageFiles }).catch((error) => {
+        logger.error("Background pipeline failed", {
+          requestId: params.id,
+          error: error instanceof Error ? error.message : "Unknown",
+        });
+      })
+    );
 
     return NextResponse.json({
       id: params.id,
