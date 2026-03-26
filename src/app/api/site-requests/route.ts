@@ -1,5 +1,7 @@
 // src/app/api/site-requests/route.ts
 
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
@@ -32,15 +34,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
 
-    const user = await prisma.user.upsert({
-      where: { id: rawUserId },
-      update: {},
-      create: {
-        id: rawUserId,
-        email: `${rawUserId}@placeholder.local`,
-        updatedAt: new Date(),
-      },
-    });
+    let user = await prisma.user.findUnique({ where: { id: rawUserId } });
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          id: rawUserId,
+          email: `${rawUserId}@placeholder.local`,
+        },
+      });
+    }
     const userId = user.id;
 
     // Map business type to Prisma enum
@@ -97,9 +99,8 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    logger.error("Failed to create site request", {
-      error: error instanceof Error ? error.message : "Unknown",
-    });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown";
+    logger.error("Failed to create site request", { error: message });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,5 +1,7 @@
 // src/app/api/site-requests/[id]/route.ts
 
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
@@ -32,14 +34,6 @@ export async function GET(
             deploymentUrl: true,
             status: true,
             deployedAt: true,
-          },
-        },
-        uploadedAssets: {
-          select: {
-            id: true,
-            fileName: true,
-            assetType: true,
-            publicUrl: true,
           },
         },
       },

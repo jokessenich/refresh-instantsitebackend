@@ -1,9 +1,11 @@
 // src/app/api/site-requests/[id]/generate/route.ts
 
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { runGenerationPipeline } from "@/services/generation-pipeline.service";
+import { runFullPipeline } from "@/services/generation-pipeline.service";
 
 export async function POST(
   req: NextRequest,
@@ -36,16 +38,26 @@ export async function POST(
       );
     }
 
-    // Mark as queued immediately and return
+    // Parse image data from request body
+    let logoFile = undefined;
+    let imageFiles = undefined;
+    try {
+      const body = await req.json();
+      logoFile = body.logoFile;
+      imageFiles = body.imageFiles;
+    } catch {
+      // No body or invalid JSON — that's fine, just no images
+    }
+
+    // Mark as queued
     await prisma.siteRequest.update({
       where: { id: params.id },
       data: { status: "QUEUED" },
     });
 
-    // Fire and forget — in production use a job queue (BullMQ, Inngest, etc.)
-    // For V1, we run it async and the client polls /status
-    runGenerationPipeline(params.id).catch((error) => {
-      logger.error("Background generation failed", {
+    // Fire and forget — runs generate + deploy in one shot
+    runFullPipeline(params.id, { logoFile, imageFiles }).catch((error) => {
+      logger.error("Background pipeline failed", {
         requestId: params.id,
         error: error instanceof Error ? error.message : "Unknown",
       });

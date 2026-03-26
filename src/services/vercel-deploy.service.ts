@@ -9,9 +9,9 @@ import type { DeploymentResult } from "@/types/deployment";
 // ─── Types ──────────────────────────────────────────────
 
 interface VercelFile {
-  file: string;   // relative path
-  sha: string;    // SHA-1 hash of content
-  size: number;   // byte length
+  file: string;
+  sha: string;
+  size: number;
 }
 
 interface VercelDeploymentResponse {
@@ -25,43 +25,43 @@ interface VercelDeploymentResponse {
 // ─── Constants ──────────────────────────────────────────
 
 const VERCEL_API_BASE = "https://api.vercel.com";
-const DEPLOY_TIMEOUT_MS = 120_000; // 2 minutes
+const DEPLOY_TIMEOUT_MS = 300_000;
 const POLL_INTERVAL_MS = 5_000;
 
 // ─── Deploy Files to Vercel ─────────────────────────────
 
-/**
- * Deploys a set of in-memory files directly to Vercel using the REST API.
- *
- * Flow:
- * 1. Compute SHA-1 hash for each file
- * 2. Upload each file to Vercel's blob store
- * 3. Create a deployment referencing those files
- * 4. Poll until deployment is ready (or timeout)
- * 5. Return the deployment URL
- */
 export async function deployToVercel(
   files: DeployableFileMap,
   projectName: string
 ): Promise<DeploymentResult> {
   const headers = buildHeaders();
+  const teamQuery = env.VERCEL_TEAM_ID ? `?teamId=${env.VERCEL_TEAM_ID}` : "";
 
-  // Step 1: Prepare file list with SHA hashes
-  const fileEntries = prepareFiles(files);
+  // Step 1: Convert all files to Buffers and compute SHA hashes
+  const fileBuffers = new Map<string, Buffer>();
+  for (const [path, content] of files) {
+    const buffer = typeof content === "string" ? Buffer.from(content, "utf-8") : content;
+    fileBuffers.set(path, buffer);
+  }
+
+  const fileEntries = prepareFiles(fileBuffers);
 
   // Step 2: Upload all files
-  await uploadFiles(files, fileEntries, headers);
+  await uploadFiles(fileBuffers, fileEntries, headers);
 
   // Step 3: Create deployment
-  const deployment = await createDeployment(fileEntries, projectName, headers);
+  const deployment = await createDeployment(fileEntries, projectName, headers, teamQuery);
 
   logger.info("Vercel deployment created", {
     deploymentId: deployment.id,
     url: deployment.url,
   });
 
-  // Step 4: Wait for deployment to be ready
-  const finalState = await waitForReady(deployment.id, headers);
+  // Step 4: Disable deployment protection
+  await disableDeploymentProtection(projectName, headers, teamQuery);
+
+  // Step 5: Wait for deployment to be ready
+  await waitForReady(deployment.id, headers, teamQuery);
 
   return {
     deploymentId: deployment.id,
@@ -73,13 +73,11 @@ export async function deployToVercel(
 
 // ─── Prepare Files ──────────────────────────────────────
 
-function prepareFiles(files: DeployableFileMap): VercelFile[] {
+function prepareFiles(files: Map<string, Buffer>): VercelFile[] {
   const entries: VercelFile[] = [];
 
-  for (const [filePath, content] of files) {
-    const buffer = Buffer.from(content, "utf-8");
+  for (const [filePath, buffer] of files) {
     const sha = crypto.createHash("sha1").update(buffer).digest("hex");
-
     entries.push({
       file: filePath,
       sha,
@@ -93,20 +91,13 @@ function prepareFiles(files: DeployableFileMap): VercelFile[] {
 // ─── Upload Files ───────────────────────────────────────
 
 async function uploadFiles(
-  files: DeployableFileMap,
+  files: Map<string, Buffer>,
   entries: VercelFile[],
   headers: Record<string, string>
 ): Promise<void> {
-  // Vercel's upload endpoint accepts individual files
-  // POST https://api.vercel.com/v2/files
-  // Headers: x-vercel-digest: <sha>, Content-Length: <size>
-  // Body: raw file content
-
   const uploadPromises = entries.map(async (entry) => {
-    const content = files.get(entry.file);
-    if (!content) throw new Error(`File content missing: ${entry.file}`);
-
-    const buffer = Buffer.from(content, "utf-8");
+    const buffer = files.get(entry.file);
+    if (!buffer) throw new Error(`File content missing: ${entry.file}`);
 
     const response = await fetch(`${VERCEL_API_BASE}/v2/files`, {
       method: "POST",
@@ -116,13 +107,11 @@ async function uploadFiles(
         "Content-Length": String(buffer.byteLength),
         "x-vercel-digest": entry.sha,
       },
-      body: buffer,
+      body: new Uint8Array(buffer),
     });
 
     if (!response.ok) {
-      // 409 = already exists, which is fine
-      if (response.status === 409) return;
-
+      if (response.status === 409) return; // already exists
       const body = await response.text();
       throw new Error(`File upload failed for ${entry.file}: ${response.status} ${body}`);
     }
@@ -139,10 +128,9 @@ async function uploadFiles(
 async function createDeployment(
   files: VercelFile[],
   projectName: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  teamQuery: string
 ): Promise<VercelDeploymentResponse> {
-  const teamQuery = env.VERCEL_TEAM_ID ? `?teamId=${env.VERCEL_TEAM_ID}` : "";
-
   const body = {
     name: projectName,
     files: files.map((f) => ({
@@ -151,9 +139,9 @@ async function createDeployment(
       size: f.size,
     })),
     projectSettings: {
-      framework: null, // Static site — no framework needed
+      framework: null,
     },
-    target: "production", // Static sites can go straight to production
+    target: "production",
   };
 
   const response = await fetch(
@@ -177,13 +165,54 @@ async function createDeployment(
   return data;
 }
 
+// ─── Disable Deployment Protection ──────────────────────
+
+async function disableDeploymentProtection(
+  projectName: string,
+  headers: Record<string, string>,
+  teamQuery: string
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `${VERCEL_API_BASE}/v9/projects/${projectName}${teamQuery}`,
+      {
+        method: "PATCH",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ssoProtection: null,
+          vercelAuthentication: { deploymentType: "none" },
+        }),
+      }
+    );
+
+    if (response.ok) {
+      logger.info("Deployment protection disabled", { projectName });
+    } else {
+      const body = await response.text();
+      logger.warn("Failed to disable deployment protection", {
+        projectName,
+        status: response.status,
+        body,
+      });
+    }
+  } catch (error) {
+    logger.warn("Could not update deployment protection settings", {
+      projectName,
+      error: error instanceof Error ? error.message : "Unknown",
+    });
+  }
+}
+
 // ─── Poll for Ready State ───────────────────────────────
 
 async function waitForReady(
   deploymentId: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  teamQuery: string
 ): Promise<string> {
-  const teamQuery = env.VERCEL_TEAM_ID ? `?teamId=${env.VERCEL_TEAM_ID}` : "";
   const startTime = Date.now();
 
   while (Date.now() - startTime < DEPLOY_TIMEOUT_MS) {
@@ -211,7 +240,6 @@ async function waitForReady(
       case "CANCELED":
         throw new Error(`Deployment ${deploymentId} ended with state: ${data.readyState}`);
       default:
-        // BUILDING, QUEUED, INITIALIZING — keep waiting
         logger.debug("Deployment still building", {
           deploymentId,
           state: data.readyState,

@@ -2,7 +2,6 @@
 
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { env } from "@/lib/env";
 
 /**
  * Domain connection service — placeholder for V1.

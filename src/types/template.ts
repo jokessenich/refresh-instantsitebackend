@@ -16,8 +16,8 @@ export interface VerticalTemplate {
   promptHints: string;
 }
 
-/** Map of file path → file content for deployment */
-export type DeployableFileMap = Map<string, string>;
+/** Map of file path → file content (string for text, Buffer for binary) */
+export type DeployableFileMap = Map<string, string | Buffer>;
 
 /** Configuration passed to the file assembler */
 export interface AssemblyContext {

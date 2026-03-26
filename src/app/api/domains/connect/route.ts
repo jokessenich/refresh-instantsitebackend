@@ -1,5 +1,7 @@
 // src/app/api/domains/connect/route.ts
 
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await initiateDomainConnection(parsed.data);
+const result = await initiateDomainConnection(parsed.data as { domain: string; deploymentId: string });
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

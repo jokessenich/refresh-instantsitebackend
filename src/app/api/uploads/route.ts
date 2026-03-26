@@ -1,5 +1,7 @@
 // src/app/api/uploads/route.ts
 
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { UploadInputSchema } from "@/types/site-request";

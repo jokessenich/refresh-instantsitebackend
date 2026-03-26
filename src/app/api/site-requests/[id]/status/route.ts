@@ -1,5 +1,7 @@
 // src/app/api/site-requests/[id]/status/route.ts
 
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { StatusResponse } from "@/types/deployment";
