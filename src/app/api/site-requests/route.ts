@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
     const input = parsed.data;
 
-    // Auto-create user if they don't exist (V1 — no real auth yet)
+// Auto-create user if they don't exist (V1 — no real auth yet)
     const rawUserId = req.headers.get("x-user-id");
     if (!rawUserId) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
