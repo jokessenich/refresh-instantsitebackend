@@ -64,7 +64,7 @@ ${parts.join("\n")}
 IMPORTANT: These image files will be deployed alongside the HTML. Reference them with a leading slash (e.g. src="/logo.png", src="/image-1.jpg"). Do NOT use base64, external URLs, or placeholder images. Use ONLY the provided image files listed above.`;
   } else {
     imageSection = `Images Provided:
-None (use CSS gradients, patterns, or solid colors for visual interest instead. Do NOT use placeholder image URLs or broken image references.)`;
+None were uploaded. Use real Unsplash photos via direct URLs (e.g. https://images.unsplash.com/photo-XXXXX?w=800&q=80). Pick specific, relevant photos for this business type — real interiors, real people, real work. Never use placeholder images or leave image slots empty. Include at least 3-5 images throughout the site.`;
   }
 
   return `The business details are below:
