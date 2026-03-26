@@ -27,8 +27,8 @@ The site should feel custom to the business, not templated or generic.
 
 Write specific, credible copy based on the business details below. Avoid bland marketing fluff, generic agency language, and overused phrases like "high-quality solutions," "tailored approach," or "customer satisfaction is our top priority."
 
-Use strong visual hierarchy, tasteful spacing, and refined styling. The design should feel like a real premium small business website.
-
+Search for and include real, high-quality photos from Unsplash or Pexels. Never use placeholder images or leave image slots empty. 
+Once you have the html, have a design council judge it — Dieter Rams, Jonathan Ive, Refik Anadol, Pentagram, Fantasy, Clay. Have them rate it on a scale of 1-10, iterate until ALL score it as 9/10+. Then self-score AI slop (1=human-designed, 10=AI slop) and iterate until under 3. Don't stop until both thresholds are met.
 Technical requirements:
 - Return only one complete HTML document
 - Do not include Markdown
