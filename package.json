@@ -12,6 +12,7 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@vercel/functions": "^1.0.0"
     "@anthropic-ai/sdk": "^0.32.1",
     "@prisma/client": "^5.22.0",
     "framer-motion": "^11.0.0",
