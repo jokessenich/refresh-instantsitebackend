@@ -276,12 +276,12 @@ function ImagePicker({ businessName, about, selectedImages, setSelectedImages })
   const MIN_IMAGES = 3;
 
   // Auto-search on mount based on business info
-  useEffect(() => {
+useEffect(() => {
     const query = buildSearchQuery(businessName, about);
-    if (query) {
+    if (query && !searched) {
       searchImages(query);
     }
-  }, []);
+  }, [businessName, about]);
 
   function buildSearchQuery(name, aboutText) {
     // Try to extract a meaningful query from the business info
