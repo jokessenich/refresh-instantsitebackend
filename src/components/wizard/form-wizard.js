@@ -266,7 +266,7 @@ function ContentArea({
 }
 
 // ─── Image Picker Step ──────────────────────────────────────────────────────
-function ImagePicker({ businessName, about, selectedImages, setSelectedImages }) {
+function ImagePicker({ businessName, about, selectedImages, setSelectedImages, searchTrigger }) {
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -275,38 +275,70 @@ function ImagePicker({ businessName, about, selectedImages, setSelectedImages })
   const MAX_IMAGES = 10;
   const MIN_IMAGES = 3;
 
-  // Auto-search on mount based on business info
-useEffect(() => {
-    const query = buildSearchQuery(businessName, about);
-    if (query && !searched) {
-      searchImages(query);
+  // Search when triggered by parent (on step navigation)
+  useEffect(() => {
+    if (searchTrigger > 0 && !searched) {
+      const query = buildSearchQuery(businessName, about);
+      if (query) {
+        searchImages(query);
+      }
     }
-  }, [businessName, about]);
+  }, [searchTrigger]);
 
   function buildSearchQuery(name, aboutText) {
-    // Try to extract a meaningful query from the business info
-    const about = (aboutText || "").toLowerCase();
-    if (about.includes("restaurant") || about.includes("food") || about.includes("menu"))
+    const text = (aboutText || "").toLowerCase();
+    if (text.includes("restaurant") || text.includes("food") || text.includes("menu"))
       return "restaurant interior food";
-    if (about.includes("photo") || about.includes("portrait") || about.includes("wedding"))
+    if (text.includes("photo") || text.includes("portrait") || text.includes("wedding"))
       return "photography studio portrait";
-    if (about.includes("therapist") || about.includes("counseling") || about.includes("therapy"))
+    if (text.includes("therapist") || text.includes("counseling") || text.includes("therapy"))
       return "therapy wellness calm office";
-    if (about.includes("consult") || about.includes("strategy") || about.includes("advisory"))
+    if (text.includes("consult") || text.includes("strategy") || text.includes("advisory"))
       return "business consulting professional office";
-    if (about.includes("contractor") || about.includes("plumbing") || about.includes("roofing"))
+    if (text.includes("contractor") || text.includes("plumbing") || text.includes("roofing"))
       return "construction contractor home renovation";
-    if (about.includes("fitness") || about.includes("gym") || about.includes("workout"))
+    if (text.includes("fitness") || text.includes("gym") || text.includes("workout"))
       return "fitness gym workout";
-    if (about.includes("salon") || about.includes("beauty") || about.includes("hair"))
+    if (text.includes("salon") || text.includes("beauty") || text.includes("hair"))
       return "beauty salon hairstyle";
-    if (about.includes("dental") || about.includes("dentist"))
+    if (text.includes("dental") || text.includes("dentist"))
       return "dental office modern";
-    if (about.includes("law") || about.includes("attorney") || about.includes("legal"))
+    if (text.includes("law") || text.includes("attorney") || text.includes("legal"))
       return "law office professional";
-    if (about.includes("real estate") || about.includes("realtor"))
+    if (text.includes("real estate") || text.includes("realtor"))
       return "real estate modern home";
-    // Generic fallback
+    if (text.includes("ice cream") || text.includes("creamery") || text.includes("dessert"))
+      return "ice cream shop dessert";
+    if (text.includes("bakery") || text.includes("bread") || text.includes("pastry"))
+      return "bakery pastry artisan";
+    if (text.includes("coffee") || text.includes("cafe") || text.includes("café"))
+      return "coffee shop cafe interior";
+    if (text.includes("pet") || text.includes("veterinar") || text.includes("grooming"))
+      return "pet care veterinary";
+    if (text.includes("auto") || text.includes("mechanic") || text.includes("car"))
+      return "auto repair mechanic shop";
+    if (text.includes("clean") || text.includes("maid") || text.includes("janitorial"))
+      return "cleaning service professional";
+    if (text.includes("landscap") || text.includes("lawn") || text.includes("garden"))
+      return "landscaping garden outdoor";
+    if (text.includes("yoga") || text.includes("meditation") || text.includes("pilates"))
+      return "yoga studio meditation";
+    if (text.includes("tattoo") || text.includes("piercing"))
+      return "tattoo studio art";
+    if (text.includes("music") || text.includes("lesson") || text.includes("instrument"))
+      return "music studio lessons";
+    if (text.includes("tutor") || text.includes("education") || text.includes("school"))
+      return "education tutoring classroom";
+    if (text.includes("moving") || text.includes("storage"))
+      return "moving company boxes";
+    if (text.includes("accounting") || text.includes("tax") || text.includes("bookkeep"))
+      return "accounting finance office";
+    if (text.includes("architect") || text.includes("interior design"))
+      return "architecture interior design";
+    if (text.includes("florist") || text.includes("flower"))
+      return "florist flower arrangement";
+    if (text.includes("daycare") || text.includes("childcare") || text.includes("preschool"))
+      return "daycare children playing";
     return name ? `${name} business` : "small business professional";
   }
 
@@ -488,6 +520,7 @@ export function FormWizard({ onClose, onGenerate }) {
   const [imported, setImported] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [selectedImages, setSelectedImages] = useState([]);
+  const [imageSearchTrigger, setImageSearchTrigger] = useState(0);
   const [form, setForm] = useState({
     businessName: "",
     about: "",
@@ -505,6 +538,14 @@ export function FormWizard({ onClose, onGenerate }) {
     setImported(false);
     setImportUrl("");
     updateForm("about", "");
+  };
+
+  const goToStep = (nextStep) => {
+    // Trigger image search when entering the image picker step
+    if (nextStep === 1 && selectedImages.length === 0) {
+      setImageSearchTrigger((prev) => prev + 1);
+    }
+    setStep(nextStep);
   };
 
   const steps = [
@@ -549,6 +590,7 @@ export function FormWizard({ onClose, onGenerate }) {
           about={form.about}
           selectedImages={selectedImages}
           setSelectedImages={setSelectedImages}
+          searchTrigger={imageSearchTrigger}
         />
       ),
     },
@@ -659,7 +701,7 @@ export function FormWizard({ onClose, onGenerate }) {
                 Selected images
               </span>
               <div className="flex gap-1.5 flex-wrap">
-                {selectedImages.map((img, i) => (
+                {selectedImages.map((img) => (
                   <div
                     key={img.id}
                     className="w-14 h-10 rounded-md overflow-hidden border border-border-subtle"
@@ -742,7 +784,7 @@ export function FormWizard({ onClose, onGenerate }) {
 
         <div className="flex gap-2.5 mt-8 justify-between">
           {step > 0 ? (
-            <Button variant="secondary" onClick={() => setStep(step - 1)}>
+            <Button variant="secondary" onClick={() => goToStep(step - 1)}>
               <Icons.ArrowLeft size={14} /> Back
             </Button>
           ) : (
@@ -750,7 +792,7 @@ export function FormWizard({ onClose, onGenerate }) {
           )}
 
           {step < steps.length - 1 ? (
-            <Button variant="primary" onClick={() => setStep(step + 1)}>
+            <Button variant="primary" onClick={() => goToStep(step + 1)}>
               Continue <Icons.ArrowRight size={14} />
             </Button>
           ) : (
