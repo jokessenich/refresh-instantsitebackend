@@ -13,6 +13,7 @@ const envSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  UNSPLASH_ACCESS_KEY,
 });
 
 export type Env = z.infer<typeof envSchema>;
