@@ -78,6 +78,8 @@ export default function Home() {
         body: JSON.stringify({
           logoFile: data.logoFiles && data.logoFiles.length > 0 ? data.logoFiles[0] : undefined,
           imageFiles: data.imageFiles && data.imageFiles.length > 0 ? data.imageFiles : undefined,
+            stockImageUrls: data.stockImageUrls || [],
+
         }),
       });
 
