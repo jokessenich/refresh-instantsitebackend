@@ -188,4 +188,15 @@ export async function runFullPipeline(
       previewUrl,
       deploymentId: requestId,
     };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown pipeline error";
+    logger.error("Full pipeline failed", { requestId, error: msg });
+
+    const current = await prisma.siteRequest.findUnique({ where: { id: requestId } });
+    if (current && current.status !== "FAILED") {
+      await updateStatus(requestId, "FAILED", msg);
+    }
+
+    throw error;
   }
+}
