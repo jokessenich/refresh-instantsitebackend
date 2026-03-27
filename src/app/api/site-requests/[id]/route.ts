@@ -1,12 +1,14 @@
-// src/app/api/site-requests/[id]/route.ts
+// src/app/api/site-requests/[id]/generate/route.ts
 
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { runFullPipeline } from "@/services/generation-pipeline.service";
 
-export async function GET(
+export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -16,27 +18,9 @@ export async function GET(
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
 
+    // Verify ownership
     const siteRequest = await prisma.siteRequest.findUnique({
       where: { id: params.id },
-      include: {
-        generatedSite: {
-          select: {
-            id: true,
-            templateId: true,
-            assembledAt: true,
-            createdAt: true,
-          },
-        },
-        deployment: {
-          select: {
-            id: true,
-            previewUrl: true,
-            deploymentUrl: true,
-            status: true,
-            deployedAt: true,
-          },
-        },
-      },
     });
 
     if (!siteRequest) {
@@ -47,9 +31,50 @@ export async function GET(
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
 
-    return NextResponse.json(siteRequest);
+    // Prevent re-generation
+    if (!["DRAFT", "FAILED"].includes(siteRequest.status)) {
+      return NextResponse.json(
+        { error: "Site has already been generated or is in progress", status: siteRequest.status },
+        { status: 409 }
+      );
+    }
+
+    // Parse image data from request body
+    let logoFile = undefined;
+    let imageFiles = undefined;
+    let stockImageUrls = undefined;
+    try {
+      const body = await req.json();
+      logoFile = body.logoFile;
+      imageFiles = body.imageFiles;
+      stockImageUrls = body.stockImageUrls;
+    } catch {
+      // No body or invalid JSON — that's fine, just no images
+    }
+
+    // Mark as queued
+    await prisma.siteRequest.update({
+      where: { id: params.id },
+      data: { status: "QUEUED" },
+    });
+
+    // Keep function alive while pipeline runs in background
+    waitUntil(
+      runFullPipeline(params.id, { logoFile, imageFiles, stockImageUrls }).catch((error) => {
+        logger.error("Background pipeline failed", {
+          requestId: params.id,
+          error: error instanceof Error ? error.message : "Unknown",
+        });
+      })
+    );
+
+    return NextResponse.json({
+      id: params.id,
+      status: "QUEUED",
+      message: "Generation started. Poll /status for updates.",
+    });
   } catch (error) {
-    logger.error("Failed to fetch site request", {
+    logger.error("Failed to start generation", {
       requestId: params.id,
       error: error instanceof Error ? error.message : "Unknown",
     });
