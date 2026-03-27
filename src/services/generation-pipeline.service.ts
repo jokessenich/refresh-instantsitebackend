@@ -164,53 +164,14 @@ export async function runFullPipeline(
 
     await updateStatus(requestId, "DEPLOYING");
 
-    // ── 7. Build deployment file map ────────────────────
-    const deployFiles = new Map<string, string | Buffer>();
-    deployFiles.set("index.html", html);
+   // ── 7. Store deployment record (self-hosted) ────────
+    const previewUrl = `https://app.better.website/sites/${requestId}`;
 
-    // Add images
-    for (const [fileName, buffer] of imageBuffers) {
-      deployFiles.set(fileName, buffer);
-    }
-
-    logger.info("Deployment file map built", {
-      requestId,
-      totalFiles: deployFiles.size,
-      fileNames: Array.from(deployFiles.keys()),
-    });
-
-    // ── 8. Validate file map ────────────────────────────
-    const textFiles = new Map<string, string>();
-    textFiles.set("index.html", html);
-    const fileValidation = validateStaticFileMap(textFiles);
-    if (!fileValidation.valid) {
-      const errorMsg = `File validation failed: ${fileValidation.errors.join("; ")}`;
-      await updateStatus(requestId, "FAILED", errorMsg);
-      throw new Error(errorMsg);
-    }
-
-    // ── 9. Store file manifest ──────────────────────────
-    const manifest: Record<string, number> = {};
-    for (const [path, content] of deployFiles) {
-      manifest[path] = typeof content === "string" ? content.length : content.byteLength;
-    }
-    await prisma.generatedSite.update({
-      where: { id: generatedSite.id },
-      data: { fileManifest: manifest, assembledAt: new Date() },
-    });
-
-    // ── 10. Deploy to Vercel ────────────────────────────
-    const projectName = `ss-${slugify(request.businessName)}-${requestId.slice(0, 8)}`;
-    const result = await deployToVercel(deployFiles, projectName);
-
-    // ── 11. Store deployment record ─────────────────────
     await prisma.deployment.create({
       data: {
         siteRequestId: requestId,
-        vercelDeploymentId: result.deploymentId,
-        vercelProjectId: result.projectId,
-        previewUrl: result.previewUrl,
-        deploymentUrl: result.deploymentUrl,
+        previewUrl,
+        deploymentUrl: previewUrl,
         status: "READY",
         deployedAt: new Date(),
       },
@@ -220,29 +181,11 @@ export async function runFullPipeline(
 
     logger.info("Full pipeline complete", {
       requestId,
-      previewUrl: result.previewUrl,
-      imageCount: imageBuffers.size,
+      previewUrl,
     });
 
     return {
-      previewUrl: result.previewUrl,
-      deploymentId: result.deploymentId,
+      previewUrl,
+      deploymentId: requestId,
     };
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown pipeline error";
-    logger.error("Full pipeline failed", { requestId, error: msg });
 
-    const current = await prisma.siteRequest.findUnique({ where: { id: requestId } });
-    if (current && current.status !== "FAILED") {
-      await updateStatus(requestId, "FAILED", msg);
-    }
-
-    throw error;
-  }
-}
-
-// ─── Helper ─────────────────────────────────────────────
-
-function slugify(str: string): string {
-  return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
-}
